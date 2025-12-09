@@ -50,7 +50,7 @@ public class IllustratorPlacementWindow : EditorWindow
     private Transform parentTransform;
     private GameObject globalPrefab; // Prefab applied to all (unless overridden)
 
-    private float positionScale = 0.01f;
+    private float positionScale = 0.00651041666f
     private bool flipY = true;
     private bool useLocalPosition = false;
 
