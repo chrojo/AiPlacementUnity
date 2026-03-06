@@ -58,7 +58,6 @@
     }
 
     function intersectsArtboard(itemBounds, artboardRect) {
-        // Both are [left, top, right, bottom]
         var il = itemBounds[0];
         var it = itemBounds[1];
         var ir = itemBounds[2];
@@ -75,6 +74,24 @@
         if (ib > at) return false;
 
         return true;
+    }
+
+    function degToRad(deg) {
+        return deg * Math.PI / 180.0;
+    }
+
+    // Rotate point around center by angleRad
+    function rotatePoint(px, py, cx, cy, angleRad) {
+        var dx = px - cx;
+        var dy = py - cy;
+
+        var cosA = Math.cos(angleRad);
+        var sinA = Math.sin(angleRad);
+
+        var rx = dx * cosA - dy * sinA;
+        var ry = dx * sinA + dy * cosA;
+
+        return [cx + rx, cy + ry];
     }
 
     // ============================================================
@@ -209,69 +226,6 @@
     }
 
     // ============================================================
-    // Strict geometry signature
-    // ============================================================
-    function computeSignatureForItems(items) {
-        var parts = [];
-        var baseX = null;
-        var baseY = null;
-
-        try {
-            for (var i = 0; i < items.length && baseX === null; i++) {
-                var it0 = items[i];
-                if (it0.typename === "PathItem" && it0.pathPoints.length > 0) {
-                    var pt0 = it0.pathPoints[0].anchor;
-                    baseX = pt0[0];
-                    baseY = pt0[1];
-                }
-            }
-
-            if (baseX === null || baseY === null) {
-                var fallback = [];
-                for (var j = 0; j < items.length; j++) {
-                    fallback.push(items[j].typename);
-                }
-                return simpleHash(fallback.join("|"));
-            }
-
-            for (var k = 0; k < items.length; k++) {
-                var it = items[k];
-
-                if (it.typename === "PathItem") {
-                    var p = it;
-                    parts.push("P");
-                    parts.push(p.closed ? "1" : "0");
-                    parts.push("#" + p.pathPoints.length);
-
-                    for (var m = 0; m < p.pathPoints.length; m++) {
-                        var a = p.pathPoints[m].anchor;
-                        var nx = a[0] - baseX;
-                        var ny = a[1] - baseY;
-                        parts.push(nx.toFixed(2) + "," + ny.toFixed(2));
-                    }
-                }
-                else if (it.typename === "PlacedItem") {
-                    parts.push("I");
-                    try {
-                        if (it.file && it.file.name) parts.push(it.file.name);
-                    } catch (ePl) {}
-                }
-                else if (it.typename === "TextFrame") {
-                    parts.push("T");
-                    try {
-                        parts.push("len=" + (it.contents ? it.contents.length : 0));
-                    } catch (eTx) {}
-                }
-                else {
-                    parts.push("X" + it.typename);
-                }
-            }
-        } catch (e) {}
-
-        return simpleHash(parts.join("|"));
-    }
-
-    // ============================================================
     // Collect path points recursively
     // ============================================================
     function collectPathPoints(item, outPoints) {
@@ -302,10 +256,88 @@
     }
 
     // ============================================================
-    // Rotation-invariant + flip-invariant shape signature
+    // Rotation-normalized points
+    // Removes rotation from the geometry before signature analysis
     // ============================================================
-    function computeShapeSpectrumSignature(items) {
+    function getRotationNormalizedPoints(items, rotationDeg) {
         var pts = collectPointsFromItems(items);
+        if (!pts || pts.length === 0) return [];
+
+        var minX =  1e20, minY =  1e20;
+        var maxX = -1e20, maxY = -1e20;
+
+        for (var i = 0; i < pts.length; i++) {
+            var x = pts[i][0];
+            var y = pts[i][1];
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
+        }
+
+        var cx = (minX + maxX) * 0.5;
+        var cy = (minY + maxY) * 0.5;
+
+        var angleRad = degToRad(-rotationDeg);
+
+        var out = [];
+        for (var p = 0; p < pts.length; p++) {
+            var rp = rotatePoint(pts[p][0], pts[p][1], cx, cy, angleRad);
+            out.push(rp);
+        }
+
+        return out;
+    }
+
+    // ============================================================
+    // Strict geometry signature
+    // Uses unrotated geometry
+    // ============================================================
+    function computeRotationNormalizedSignature(items, rotationDeg) {
+        var pts = getRotationNormalizedPoints(items, rotationDeg);
+
+        if (!pts || pts.length < 1) {
+            var fallback = [];
+            for (var j = 0; j < items.length; j++) {
+                fallback.push(items[j].typename);
+            }
+            return simpleHash(fallback.join("|"));
+        }
+
+        var minX =  1e20, minY =  1e20;
+        for (var i = 0; i < pts.length; i++) {
+            if (pts[i][0] < minX) minX = pts[i][0];
+            if (pts[i][1] < minY) minY = pts[i][1];
+        }
+
+        var normalized = [];
+        for (var k = 0; k < pts.length; k++) {
+            normalized.push([
+                pts[k][0] - minX,
+                pts[k][1] - minY
+            ]);
+        }
+
+        var parts = [];
+        parts.push("P");
+        parts.push("#" + normalized.length);
+
+        for (var n = 0; n < normalized.length; n++) {
+            parts.push(
+                normalized[n][0].toFixed(3) + "," +
+                normalized[n][1].toFixed(3)
+            );
+        }
+
+        return simpleHash(parts.join("|"));
+    }
+
+    // ============================================================
+    // Rotation-normalized + scale-normalized + flip-invariant
+    // More tolerant family signature
+    // ============================================================
+    function computeRotationNormalizedShapeSignature(items, rotationDeg) {
+        var pts = getRotationNormalizedPoints(items, rotationDeg);
 
         if (!pts || pts.length < 3) {
             var fb = [];
@@ -325,94 +357,31 @@
             if (y > maxY) maxY = y;
         }
 
-        var cx = (minX + maxX) * 0.5;
-        var cy = (minY + maxY) * 0.5;
+        var width = maxX - minX;
+        var height = maxY - minY;
 
-        var bins = 36;
-        var spectrum = [];
-        for (var b = 0; b < bins; b++) spectrum[b] = 0;
-
-        var maxRadius = 0;
-        var polar = [];
-
-        for (var p = 0; p < pts.length; p++) {
-            var dx = pts[p][0] - cx;
-            var dy = pts[p][1] - cy;
-
-            var r = Math.sqrt(dx * dx + dy * dy);
-            if (r > maxRadius) maxRadius = r;
-
-            var angle = Math.atan2(dy, dx);
-            polar.push({ angle: angle, radius: r });
-        }
-
-        if (maxRadius < 0.0001) {
+        if (Math.abs(width) < 0.0001 || Math.abs(height) < 0.0001) {
             return simpleHash("degenerate");
         }
 
-        for (var q = 0; q < polar.length; q++) {
-            var pr = polar[q];
-            var normRadius = pr.radius / maxRadius;
+        var canonicalA = [];
+        var canonicalB = [];
 
-            var ang = pr.angle + Math.PI;
-            var bin = Math.floor((ang / (2 * Math.PI)) * bins);
-            if (bin < 0) bin = 0;
-            if (bin >= bins) bin = bins - 1;
+        for (var p = 0; p < pts.length; p++) {
+            var nx = (pts[p][0] - minX) / width;
+            var ny = (pts[p][1] - minY) / height;
 
-            if (normRadius > spectrum[bin]) {
-                spectrum[bin] = normRadius;
-            }
+            canonicalA.push(nx.toFixed(4) + "," + ny.toFixed(4));
+            canonicalB.push((1.0 - nx).toFixed(4) + "," + ny.toFixed(4));
         }
 
-        function spectrumToString(arr) {
-            var parts = [];
-            for (var i = 0; i < arr.length; i++) {
-                parts.push(arr[i].toFixed(4));
-            }
-            return parts.join("|");
-        }
+        canonicalA.sort();
+        canonicalB.sort();
 
-        function rotateArray(arr, shift) {
-            var out = [];
-            var n = arr.length;
-            for (var i = 0; i < n; i++) {
-                out.push(arr[(i + shift) % n]);
-            }
-            return out;
-        }
+        var strA = canonicalA.join("|");
+        var strB = canonicalB.join("|");
 
-        function reverseArray(arr) {
-            var out = [];
-            for (var i = arr.length - 1; i >= 0; i--) {
-                out.push(arr[i]);
-            }
-            return out;
-        }
-
-        function getCanonicalSpectrumString(arr) {
-            var best = null;
-            var n = arr.length;
-
-            // all rotations
-            for (var s = 0; s < n; s++) {
-                var rotated = rotateArray(arr, s);
-                var str = spectrumToString(rotated);
-                if (best === null || str < best) best = str;
-            }
-
-            // all rotations of reversed array (flip-invariant too)
-            var reversed = reverseArray(arr);
-            for (var r = 0; r < n; r++) {
-                var rotatedRev = rotateArray(reversed, r);
-                var revStr = spectrumToString(rotatedRev);
-                if (best === null || revStr < best) best = revStr;
-            }
-
-            return best;
-        }
-
-        var canonical = getCanonicalSpectrumString(spectrum);
-        return simpleHash(canonical);
+        return simpleHash(strA < strB ? strA : strB);
     }
 
     // ============================================================
@@ -522,8 +491,8 @@
             try { rotation = node.rotation || 0; } catch (eRot) {}
 
             var sigItems = (node.typename === "GroupItem") ? node.pageItems : [node];
-            var signature = computeSignatureForItems(sigItems);
-            var shapeSignature = computeShapeSpectrumSignature(sigItems);
+            var signature = computeRotationNormalizedSignature(sigItems, rotation);
+            var shapeSignature = computeRotationNormalizedShapeSignature(sigItems, rotation);
 
             // Hide all doc items
             for (var li2 = 0; li2 < doc.layers.length; li2++) {
