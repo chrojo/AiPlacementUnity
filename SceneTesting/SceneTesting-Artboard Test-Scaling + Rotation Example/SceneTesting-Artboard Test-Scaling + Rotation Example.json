@@ -1,0 +1,22 @@
+{
+  "sceneName": "SceneTesting-Artboard Test-Scaling + Rotation Example",
+  "documentName": "SceneTesting",
+  "exportScope": "Selected Layer",
+  "artboard": "Artboard Test",
+  "layer": "Scaling + Rotation Example",
+  "objects": [
+    { "name": "Group_0", "type": "GroupItem", "sourceLayer": "Scaling + Rotation Example", "x": 196.15, "y": 180.56, "width": 73.21, "height": 60.01, "rotation": 0.00, "zorder": 0, "signature": "46743973", "shapeSignature": "4861668", "thumbnail": "thumbnails/Group_0.png" },
+    { "name": "Group_1", "type": "GroupItem", "sourceLayer": "Scaling + Rotation Example", "x": 71.69, "y": 166.04, "width": 35.45, "height": 29.05, "rotation": 0.00, "zorder": 1, "signature": "6ecc4ca6", "shapeSignature": "4861668", "thumbnail": "thumbnails/Group_1.png" },
+    { "name": "Group_2", "type": "GroupItem", "sourceLayer": "Scaling + Rotation Example", "x": 433.36, "y": 155.02, "width": 47.49, "height": 81.35, "rotation": 0.00, "zorder": 2, "signature": "2c115890", "shapeSignature": "1d9d945d", "thumbnail": "thumbnails/Group_2.png" },
+    { "name": "Group_3", "type": "GroupItem", "sourceLayer": "Scaling + Rotation Example", "x": 426.41, "y": 325.99, "width": 16.25, "height": 14.36, "rotation": 0.00, "zorder": 3, "signature": "115e5e6f", "shapeSignature": "2208c6c7", "thumbnail": "thumbnails/Group_3.png" },
+    { "name": "Group_4", "type": "GroupItem", "sourceLayer": "Scaling + Rotation Example", "x": 398.26, "y": 227.70, "width": 36.51, "height": 26.45, "rotation": 0.00, "zorder": 4, "signature": "505e24fc", "shapeSignature": "1574a7c8", "thumbnail": "thumbnails/Group_4.png" },
+    { "name": "Group_5", "type": "GroupItem", "sourceLayer": "Scaling + Rotation Example", "x": 71.75, "y": 361.23, "width": 103.39, "height": 50.67, "rotation": 0.00, "zorder": 5, "signature": "2248e5f6", "shapeSignature": "44848dd3", "thumbnail": "thumbnails/Group_5.png" },
+    { "name": "Group_6", "type": "GroupItem", "sourceLayer": "Scaling + Rotation Example", "x": 252.75, "y": 391.84, "width": 25.88, "height": 55.16, "rotation": 0.00, "zorder": 6, "signature": "3be86d8e", "shapeSignature": "efbb5ee", "thumbnail": "thumbnails/Group_6.png" },
+    { "name": "Group_7", "type": "GroupItem", "sourceLayer": "Scaling + Rotation Example", "x": 390.96, "y": 438.45, "width": 84.11, "height": 68.34, "rotation": 0.00, "zorder": 7, "signature": "7817dca7", "shapeSignature": "b3c566a", "thumbnail": "thumbnails/Group_7.png" },
+    { "name": "Group_8", "type": "GroupItem", "sourceLayer": "Scaling + Rotation Example", "x": 287.31, "y": 264.52, "width": 56.82, "height": 22.64, "rotation": 0.00, "zorder": 8, "signature": "2064a88c", "shapeSignature": "158b5c22", "thumbnail": "thumbnails/Group_8.png" },
+    { "name": "Path_9", "type": "PathItem", "sourceLayer": "Scaling + Rotation Example", "x": 148.22, "y": 423.62, "width": 65.89, "height": 53.94, "rotation": 0.00, "zorder": 9, "signature": "3ec937cb", "shapeSignature": "df4e771", "thumbnail": "thumbnails/Path_9.png" },
+    { "name": "Path_10", "type": "PathItem", "sourceLayer": "Scaling + Rotation Example", "x": 377.79, "y": 76.65, "width": 169.26, "height": 152.51, "rotation": 0.00, "zorder": 10, "signature": "3f678e6c", "shapeSignature": "7d6da1f0", "thumbnail": "thumbnails/Path_10.png" },
+    { "name": "Path_11", "type": "PathItem", "sourceLayer": "Scaling + Rotation Example", "x": 129.80, "y": 79.27, "width": 113.51, "height": 125.97, "rotation": 0.00, "zorder": 11, "signature": "788677dd", "shapeSignature": "7d6da1f0", "thumbnail": "thumbnails/Path_11.png" },
+    { "name": "Path_12", "type": "PathItem", "sourceLayer": "Scaling + Rotation Example", "x": 158.50, "y": 261.99, "width": 101.83, "height": 33.87, "rotation": 0.00, "zorder": 12, "signature": "1b8b5852", "shapeSignature": "2581e6f0", "thumbnail": "thumbnails/Path_12.png" }
+  ]
+}

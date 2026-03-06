@@ -58,6 +58,7 @@
     }
 
     function intersectsArtboard(itemBounds, artboardRect) {
+        // Both are [left, top, right, bottom]
         var il = itemBounds[0];
         var it = itemBounds[1];
         var ir = itemBounds[2];
@@ -208,7 +209,7 @@
     }
 
     // ============================================================
-    // Signatures
+    // Strict geometry signature
     // ============================================================
     function computeSignatureForItems(items) {
         var parts = [];
@@ -270,6 +271,9 @@
         return simpleHash(parts.join("|"));
     }
 
+    // ============================================================
+    // Collect path points recursively
+    // ============================================================
     function collectPathPoints(item, outPoints) {
         if (!item) return;
 
@@ -297,6 +301,9 @@
         return pts;
     }
 
+    // ============================================================
+    // Rotation-invariant + flip-invariant shape signature
+    // ============================================================
     function computeShapeSpectrumSignature(items) {
         var pts = collectPointsFromItems(items);
 
@@ -357,12 +364,55 @@
             }
         }
 
-        var parts = [];
-        for (var s = 0; s < spectrum.length; s++) {
-            parts.push(spectrum[s].toFixed(4));
+        function spectrumToString(arr) {
+            var parts = [];
+            for (var i = 0; i < arr.length; i++) {
+                parts.push(arr[i].toFixed(4));
+            }
+            return parts.join("|");
         }
 
-        return simpleHash(parts.join("|"));
+        function rotateArray(arr, shift) {
+            var out = [];
+            var n = arr.length;
+            for (var i = 0; i < n; i++) {
+                out.push(arr[(i + shift) % n]);
+            }
+            return out;
+        }
+
+        function reverseArray(arr) {
+            var out = [];
+            for (var i = arr.length - 1; i >= 0; i--) {
+                out.push(arr[i]);
+            }
+            return out;
+        }
+
+        function getCanonicalSpectrumString(arr) {
+            var best = null;
+            var n = arr.length;
+
+            // all rotations
+            for (var s = 0; s < n; s++) {
+                var rotated = rotateArray(arr, s);
+                var str = spectrumToString(rotated);
+                if (best === null || str < best) best = str;
+            }
+
+            // all rotations of reversed array (flip-invariant too)
+            var reversed = reverseArray(arr);
+            for (var r = 0; r < n; r++) {
+                var rotatedRev = rotateArray(reversed, r);
+                var revStr = spectrumToString(rotatedRev);
+                if (best === null || revStr < best) best = revStr;
+            }
+
+            return best;
+        }
+
+        var canonical = getCanonicalSpectrumString(spectrum);
+        return simpleHash(canonical);
     }
 
     // ============================================================
@@ -430,7 +480,6 @@
 
         var tmpABIndex = null;
         var prevLayerVisible = [];
-        var prevHidden = [];
         var allDocHidden = [];
 
         try {
