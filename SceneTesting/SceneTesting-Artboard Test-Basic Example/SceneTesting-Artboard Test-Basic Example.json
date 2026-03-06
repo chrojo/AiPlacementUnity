@@ -1,0 +1,15 @@
+{
+  "sceneName": "SceneTesting-Artboard Test-Basic Example",
+  "documentName": "SceneTesting",
+  "exportScope": "Selected Layer",
+  "artboard": "Artboard Test",
+  "layer": "Basic Example",
+  "objects": [
+    { "name": "Group_0", "type": "GroupItem", "sourceLayer": "Basic Example", "x": 136.77, "y": 285.59, "width": 35.45, "height": 29.05, "rotation": 0.00, "zorder": 0, "signature": "6ecc4ca6", "shapeSignature": "3ae85510", "thumbnail": "thumbnails/Group_0.png" },
+    { "name": "Group_1", "type": "GroupItem", "sourceLayer": "Basic Example", "x": 391.09, "y": 226.09, "width": 31.49, "height": 30.58, "rotation": 0.00, "zorder": 1, "signature": "402bd6bc", "shapeSignature": "653e7558", "thumbnail": "thumbnails/Group_1.png" },
+    { "name": "Group_2", "type": "GroupItem", "sourceLayer": "Basic Example", "x": 302.97, "y": 348.84, "width": 55.16, "height": 25.88, "rotation": 0.00, "zorder": 2, "signature": "408f95cd", "shapeSignature": "35f8d04a", "thumbnail": "thumbnails/Group_2.png" },
+    { "name": "Group_3", "type": "GroupItem", "sourceLayer": "Basic Example", "x": 287.18, "y": 126.26, "width": 54.26, "height": 28.06, "rotation": 0.00, "zorder": 3, "signature": "6f5a2fd1", "shapeSignature": "4903fcc8", "thumbnail": "thumbnails/Group_3.png" },
+    { "name": "Path_4", "type": "PathItem", "sourceLayer": "Basic Example", "x": 145.24, "y": 181.46, "width": 104.17, "height": 26.87, "rotation": 0.00, "zorder": 4, "signature": "78044af6", "shapeSignature": "155d82f7", "thumbnail": "thumbnails/Path_4.png" },
+    { "name": "Path_5", "type": "PathItem", "sourceLayer": "Basic Example", "x": 250.00, "y": 250.00, "width": 500.00, "height": 500.00, "rotation": 0.00, "zorder": 5, "signature": "453240b2", "shapeSignature": "665377bc", "thumbnail": "thumbnails/Path_5.png" }
+  ]
+}

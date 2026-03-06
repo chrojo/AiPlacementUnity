@@ -17,7 +17,7 @@ public class IllustratorObjectData
     public float height;
     public float rotation;
     public string thumbnail;
-    public int zorder;   // Illustrator z-order (0 = back)
+    public int zorder;
 }
 
 [Serializable]
@@ -30,12 +30,16 @@ public class IllustratorExportData
 public class IllustratorObjectView
 {
     public IllustratorObjectData data;
-    public string gameObjectName; // only used when useCustomName = true
+    public string gameObjectName;
     public bool useCustomName = false;
 
     public Texture2D thumbnail;
     public bool create = true;
-    public GameObject prefab; // Per-element prefab
+
+    public bool selected = false;   // visual selection for the whole card
+
+    public GameObject prefab;       // Either prefab...
+    public Sprite sprite;           // ...or sprite (mutually exclusive)
 }
 
 #endregion
@@ -48,194 +52,440 @@ public class IllustratorPlacementWindow : EditorWindow
     private IllustratorObjectView[] views;
 
     private Transform parentTransform;
-    private GameObject globalPrefab; // Prefab applied to all (unless overridden)
+    private GameObject globalPrefab;
 
-    private float positionScale = 0.00651041666f
+    // Default for 153.6 PPU → 1 / 153.6 ≈ 0.0065104167
+    private float positionScale = 0.0065104167f;
     private bool flipY = true;
     private bool useLocalPosition = false;
 
-    private Vector2 scroll;
+    private Vector2 galleryScroll;
 
     [MenuItem("Tools/Illustrator Placement Tool")]
     public static void ShowWindow()
     {
         var win = GetWindow<IllustratorPlacementWindow>("Illustrator Placement");
-        win.minSize = new Vector2(520, 350);
+        win.minSize = new Vector2(700, 400);
     }
 
     private void OnGUI()
     {
-        EditorGUILayout.LabelField("Import Illustrator Layout", EditorStyles.boldLabel);
-
-        // JSON path
         EditorGUILayout.BeginHorizontal();
-        jsonPath = EditorGUILayout.TextField("JSON File Path", jsonPath);
-        if (GUILayout.Button("Browse", GUILayout.Width(80)))
-        {
-            string file = EditorUtility.OpenFilePanel("Select Illustrator JSON", "", "json");
-            if (!string.IsNullOrEmpty(file))
-                jsonPath = file;
-        }
+
+        // LEFT: GALLERY
+        EditorGUILayout.BeginVertical(GUILayout.ExpandWidth(true));
+        DrawGalleryPanel();
+        EditorGUILayout.EndVertical();
+
+        // RIGHT: IMPORT + ACTIONS
+        EditorGUILayout.BeginVertical(GUILayout.Width(280));
+        DrawRightPanel();
+        EditorGUILayout.EndVertical();
+
         EditorGUILayout.EndHorizontal();
+    }
 
-        parentTransform = (Transform)EditorGUILayout.ObjectField("Parent Transform", parentTransform, typeof(Transform), true);
-        globalPrefab = (GameObject)EditorGUILayout.ObjectField("Global Prefab", globalPrefab, typeof(GameObject), false);
+    #region Gallery
 
-        positionScale = EditorGUILayout.FloatField("Position Scale", positionScale);
-        flipY = EditorGUILayout.Toggle("Flip Y", flipY);
-        useLocalPosition = EditorGUILayout.Toggle("Use Local Position", useLocalPosition);
+    private void DrawGalleryPanel()
+    {
+        if (exportData != null)
+            EditorGUILayout.LabelField("Layer: " + exportData.layer, EditorStyles.miniBoldLabel);
 
-        EditorGUILayout.Space();
+        galleryScroll = EditorGUILayout.BeginScrollView(galleryScroll);
 
-        using (new EditorGUI.DisabledScope(string.IsNullOrEmpty(jsonPath)))
+        if (views == null || views.Length == 0)
         {
-            if (GUILayout.Button("Load JSON and Thumbnails"))
-            {
-                LoadJson();
-            }
-        }
-
-        EditorGUILayout.Space();
-
-        if (exportData == null || views == null)
-        {
-            EditorGUILayout.HelpBox("Select a JSON file and click Load JSON.", MessageType.Info);
+            EditorGUILayout.HelpBox("Load a JSON file from the right panel.", MessageType.Info);
+            EditorGUILayout.EndScrollView();
             return;
         }
 
-        EditorGUILayout.LabelField("Layer: " + exportData.layer, EditorStyles.miniBoldLabel);
-        EditorGUILayout.Space();
+        int columns = 5;
+        float rightPanelWidth = 280f;
+        float totalWidth = position.width - rightPanelWidth - 40f;
+        if (totalWidth < 200f) totalWidth = position.width - 40f;
+        float cardWidth = totalWidth / columns;
+        if (cardWidth < 120f) cardWidth = 120f;
 
-        // Object list panel
-        scroll = EditorGUILayout.BeginScrollView(scroll);
-
-        foreach (var v in views)
+        for (int i = 0; i < views.Length; i += columns)
         {
-            EditorGUILayout.BeginVertical("box");
             EditorGUILayout.BeginHorizontal();
-
-            // Thumbnail preview
-            if (v.thumbnail != null)
-                GUILayout.Label(v.thumbnail, GUILayout.Width(64), GUILayout.Height(64));
-            else
-                GUILayout.Box("No Image", GUILayout.Width(64), GUILayout.Height(64));
-
-            EditorGUILayout.BeginVertical();
-
-            v.create = EditorGUILayout.Toggle("Create", v.create);
-
-            // Per-element prefab
-            v.prefab = (GameObject)EditorGUILayout.ObjectField("Prefab", v.prefab, typeof(GameObject), false);
-
-            // Default name (from prefab/global/Illustrator)
-            string defaultName = GetDefaultName(v);
-            EditorGUILayout.LabelField("Default Name (from prefab): " + defaultName);
-
-            // Custom name toggle + field
-            v.useCustomName = EditorGUILayout.Toggle("Use Custom Name", v.useCustomName);
-            if (v.useCustomName)
+            for (int c = 0; c < columns; c++)
             {
-                v.gameObjectName = EditorGUILayout.TextField("Custom GameObject Name", v.gameObjectName);
+                int index = i + c;
+                if (index >= views.Length)
+                    break;
+
+                DrawObjectCardCompact(views[index], cardWidth);
             }
-
-            EditorGUILayout.LabelField("Illustrator Name: " + v.data.name);
-            EditorGUILayout.LabelField(
-                $"Size W/H: {v.data.width:F1} x {v.data.height:F1}");
-            EditorGUILayout.LabelField(
-                $"Pos: {v.data.x:F1}, {v.data.y:F1}  Rot: {v.data.rotation:F1}  Z: {v.data.zorder}");
-
-            EditorGUILayout.EndVertical();
             EditorGUILayout.EndHorizontal();
-            EditorGUILayout.EndVertical();
         }
 
         EditorGUILayout.EndScrollView();
+    }
 
-        EditorGUILayout.Space();
+    /// <summary>
+    /// Card that:
+    /// - Is selectable as a whole (like a folder/file).
+    /// - Shows thumbnail, names, prefab & sprite fields, and create toggle.
+    /// - Prefab & Sprite are mutually exclusive.
+    /// - Supports drag & drop: prefab/sprite dropped on a card is applied to
+    ///   all selected cards (or just that card if none selected).
+    /// </summary>
+    private void DrawObjectCardCompact(IllustratorObjectView v, float cardWidth)
+    {
+        // Tint the box if selected
+        Color oldColor = GUI.color;
+        if (v.selected)
+            GUI.color = new Color(0.24f, 0.24f, 0.24f);  // light gray
 
-        if (GUILayout.Button("Create GameObjects"))
+        GUILayout.BeginVertical("box", GUILayout.Width(cardWidth));
+
+        // Reset color so inner controls look normal
+        GUI.color = oldColor;
+
+        // Create toggle
+        v.create = GUILayout.Toggle(v.create, "Create", GUILayout.Height(16));
+
+        // Thumbnail
+        GUILayout.BeginHorizontal();
+        GUILayout.FlexibleSpace();
+        GUILayout.Label(v.thumbnail != null ? v.thumbnail : Texture2D.grayTexture,
+            GUILayout.Width(40), GUILayout.Height(40));
+        GUILayout.FlexibleSpace();
+        GUILayout.EndHorizontal();
+
+        // Prefab name (first line)
+        string prefabName = v.prefab ? v.prefab.name : "No prefab";
+        var prefabNameStyle = new GUIStyle(EditorStyles.boldLabel)
         {
-            CreateGameObjects();
+            fontSize = 9,
+            alignment = TextAnchor.MiddleCenter,
+            normal = { textColor = v.prefab ? Color.white : new Color(1, 1, 1, 0.35f) }
+        };
+        GUILayout.Label(prefabName, prefabNameStyle);
+
+        // Illustrator name (second line)
+        string illustratorLabel = string.IsNullOrEmpty(v.data.name) ? "Object" : v.data.name;
+        var illustratorStyle = new GUIStyle(EditorStyles.miniLabel)
+        {
+            fontSize = 8,
+            alignment = TextAnchor.MiddleCenter
+        };
+        GUILayout.Label(illustratorLabel, illustratorStyle);
+
+        // Prefab field (with label)
+        EditorGUILayout.LabelField("Prefab", EditorStyles.miniLabel);
+        EditorGUI.BeginChangeCheck();
+        GameObject newPrefab = (GameObject)EditorGUILayout.ObjectField(
+            GUIContent.none,
+            v.prefab,
+            typeof(GameObject),
+            false,
+            GUILayout.Height(14));
+        if (EditorGUI.EndChangeCheck())
+        {
+            v.prefab = newPrefab;
+            if (newPrefab != null)
+            {
+                // Prefab chosen → clear sprite (mutual exclusive)
+                v.sprite = null;
+            }
+        }
+
+        // Sprite field (with label)
+        EditorGUILayout.LabelField("Sprite", EditorStyles.miniLabel);
+        EditorGUI.BeginChangeCheck();
+        Sprite newSprite = (Sprite)EditorGUILayout.ObjectField(
+            GUIContent.none,
+            v.sprite,
+            typeof(Sprite),
+            false,
+            GUILayout.Height(14));
+        if (EditorGUI.EndChangeCheck())
+        {
+            v.sprite = newSprite;
+            if (newSprite != null)
+            {
+                // Sprite chosen → clear prefab (mutual exclusive)
+                v.prefab = null;
+            }
+        }
+
+        GUILayout.EndVertical();
+
+        // Get the rect Unity just used for this vertical card
+        Rect cardRect = GUILayoutUtility.GetLastRect();
+
+        // ---- Change cursor when hovering ----
+        if (cardRect.Contains(Event.current.mousePosition))
+        {
+            // Options:
+            // Link        = pointer hand
+            // ArrowPlus   = arrow with plus sign
+            // SlideArrow  = arrows left-right
+            // MoveArrow   = move icon
+            // You can customize later
+            EditorGUIUtility.AddCursorRect(cardRect, MouseCursor.Link);
+        }
+
+        // Click on the whole card toggles selection
+        Event e = Event.current;
+        if (e.type == EventType.MouseDown && e.button == 0 && cardRect.Contains(e.mousePosition))
+        {
+            v.selected = !v.selected;
+            GUI.changed = true;
+            Repaint();
+        }
+
+        // Drag & Drop of prefab / sprite on this card
+        if (cardRect.Contains(e.mousePosition))
+        {
+            if (e.type == EventType.DragUpdated && ContainsPrefabOrSprite(DragAndDrop.objectReferences))
+            {
+                DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
+                e.Use();
+            }
+            else if (e.type == EventType.DragPerform && ContainsPrefabOrSprite(DragAndDrop.objectReferences))
+            {
+                DragAndDrop.AcceptDrag();
+                HandleDragOnCard(v, DragAndDrop.objectReferences);
+                e.Use();
+            }
         }
     }
+
+    private bool ContainsPrefabOrSprite(UnityEngine.Object[] objs)
+    {
+        foreach (var o in objs)
+        {
+            if (o is GameObject || o is Sprite)
+                return true;
+        }
+        return false;
+    }
+
+    private void HandleDragOnCard(IllustratorObjectView target, UnityEngine.Object[] objs)
+    {
+        GameObject droppedPrefab = null;
+        Sprite droppedSprite = null;
+
+        foreach (var obj in objs)
+        {
+            if (obj is GameObject go && droppedPrefab == null)
+                droppedPrefab = go;
+            else if (obj is Sprite sp && droppedSprite == null)
+                droppedSprite = sp;
+        }
+
+        if (droppedPrefab != null)
+        {
+            AssignPrefabToSelectedOrSingle(droppedPrefab, target);
+        }
+        else if (droppedSprite != null)
+        {
+            AssignSpriteToSelectedOrSingle(droppedSprite, target);
+        }
+
+        Repaint();
+    }
+
+    /// <summary>
+    /// If there are selected cards, assign prefab to all selected.
+    /// Otherwise assign only to this target card.
+    /// </summary>
+    private void AssignPrefabToSelectedOrSingle(GameObject prefab, IllustratorObjectView target)
+    {
+        if (prefab == null || views == null) return;
+
+        bool anySelected = false;
+        foreach (var v in views)
+        {
+            if (v.selected)
+            {
+                anySelected = true;
+                break;
+            }
+        }
+
+        if (anySelected)
+        {
+            foreach (var v in views)
+            {
+                if (!v.selected) continue;
+                v.prefab = prefab;
+                v.sprite = null;
+            }
+        }
+        else
+        {
+            target.prefab = prefab;
+            target.sprite = null;
+        }
+    }
+
+    /// <summary>
+    /// If there are selected cards, assign sprite to all selected.
+    /// Otherwise assign only to this target card.
+    /// </summary>
+    private void AssignSpriteToSelectedOrSingle(Sprite sprite, IllustratorObjectView target)
+    {
+        if (sprite == null || views == null) return;
+
+        bool anySelected = false;
+        foreach (var v in views)
+        {
+            if (v.selected)
+            {
+                anySelected = true;
+                break;
+            }
+        }
+
+        if (anySelected)
+        {
+            foreach (var v in views)
+            {
+                if (!v.selected) continue;
+                v.sprite = sprite;
+                v.prefab = null;
+            }
+        }
+        else
+        {
+            target.sprite = sprite;
+            target.prefab = null;
+        }
+    }
+
+    #endregion
+
+    #region Right panel
+
+    private void DrawRightPanel()
+    {
+        EditorGUILayout.LabelField("Import Illustrator Layout", EditorStyles.boldLabel);
+        EditorGUILayout.Space(4);
+
+        // JSON path – label then field
+        EditorGUILayout.LabelField("JSON Path", EditorStyles.miniLabel);
+        jsonPath = EditorGUILayout.TextField(jsonPath);
+        if (GUILayout.Button("Browse...", GUILayout.Height(20)))
+        {
+            string file = EditorUtility.OpenFilePanel("Select JSON", "", "json");
+            if (!string.IsNullOrEmpty(file))
+                jsonPath = file;
+        }
+
+        EditorGUILayout.Space(6);
+
+        // Parent Transform
+        EditorGUILayout.LabelField("Parent Transform", EditorStyles.miniLabel);
+        parentTransform = (Transform)EditorGUILayout.ObjectField(parentTransform, typeof(Transform), true);
+
+        // Global Prefab
+        EditorGUILayout.LabelField("Global Prefab", EditorStyles.miniLabel);
+        globalPrefab = (GameObject)EditorGUILayout.ObjectField(globalPrefab, typeof(GameObject), false);
+
+        // Position Scale
+        EditorGUILayout.LabelField("Position Scale", EditorStyles.miniLabel);
+        positionScale = EditorGUILayout.FloatField(positionScale);
+
+        EditorGUILayout.Space(4);
+
+        // Checkboxes
+        flipY = EditorGUILayout.ToggleLeft("Flip Y", flipY);
+        useLocalPosition = EditorGUILayout.ToggleLeft("Use Local Position", useLocalPosition);
+
+        EditorGUILayout.Space(6);
+
+        using (new EditorGUI.DisabledScope(string.IsNullOrEmpty(jsonPath)))
+        {
+            if (GUILayout.Button("Load JSON + Thumbnails", GUILayout.Height(22)))
+                LoadJson();
+        }
+
+        EditorGUILayout.Space(10);
+        EditorGUILayout.LabelField("Summary", EditorStyles.boldLabel);
+
+        int total = views?.Length ?? 0;
+        int toCreate = 0;
+
+        if (views != null)
+        {
+            foreach (var v in views)
+            {
+                if (v.create) toCreate++;
+            }
+        }
+
+        EditorGUILayout.LabelField("Total: " + total);
+        EditorGUILayout.LabelField("To Create: " + toCreate);
+
+        EditorGUILayout.Space(4);
+        EditorGUILayout.HelpBox(
+            "Click a card to select/deselect it (like folders).\n" +
+            "Drag a Prefab or Sprite from the Project window onto any card.\n" +
+            "If some cards are selected, the dropped asset is assigned to ALL selected.\n" +
+            "If none are selected, it only applies to the card you dropped on.",
+            MessageType.None);
+
+        using (new EditorGUI.DisabledScope(views == null))
+        {
+            if (GUILayout.Button("Create GameObjects", GUILayout.Height(30)))
+                CreateGameObjects();
+        }
+    }
+
+    #endregion
+
+    #region Loading & creation
 
     private void LoadJson()
     {
         if (!File.Exists(jsonPath))
         {
-            Debug.LogError("JSON file not found: " + jsonPath);
-            exportData = null;
-            views = null;
+            Debug.LogError("JSON not found: " + jsonPath);
             return;
         }
 
-        try
+        string json = File.ReadAllText(jsonPath, Encoding.UTF8);
+        exportData = JsonUtility.FromJson<IllustratorExportData>(json);
+
+        if (exportData == null || exportData.objects == null)
         {
-            string jsonText = File.ReadAllText(jsonPath, Encoding.UTF8);
-            exportData = JsonUtility.FromJson<IllustratorExportData>(jsonText);
-        }
-        catch (Exception ex)
-        {
-            Debug.LogError("JSON parse error: " + ex);
-            exportData = null;
-            views = null;
+            Debug.LogError("Invalid JSON.");
             return;
         }
 
-        if (exportData?.objects == null)
-        {
-            Debug.LogError("Invalid JSON format.");
-            exportData = null;
-            views = null;
-            return;
-        }
-
-        string baseDir = Path.GetDirectoryName(jsonPath).Replace("\\", "/");
+        string baseDir = Path.GetDirectoryName(jsonPath);
 
         views = new IllustratorObjectView[exportData.objects.Length];
 
         for (int i = 0; i < exportData.objects.Length; i++)
         {
-            var data = exportData.objects[i];
-            var view = new IllustratorObjectView
-            {
-                data = data,
-                gameObjectName = data.name, // initial value if custom name is enabled
-                useCustomName = false,
-                create = true,
-                prefab = null
-            };
+            var d = exportData.objects[i];
+            var view = new IllustratorObjectView { data = d, create = true, selected = false };
 
-            string thumbPath = Path.Combine(baseDir, data.thumbnail).Replace("\\", "/");
-
-            if (File.Exists(thumbPath))
+            string thumb = Path.Combine(baseDir, d.thumbnail);
+            if (File.Exists(thumb))
             {
-                try
-                {
-                    byte[] bytes = File.ReadAllBytes(thumbPath);
-                    Texture2D tex = new Texture2D(2, 2);
-                    tex.LoadImage(bytes);
-                    view.thumbnail = tex;
-                }
-                catch (Exception e)
-                {
-                    Debug.LogWarning("Failed to load thumbnail: " + thumbPath + "\n" + e);
-                }
+                byte[] bytes = File.ReadAllBytes(thumb);
+                Texture2D tex = new Texture2D(2, 2);
+                tex.LoadImage(bytes);
+                view.thumbnail = tex;
             }
 
             views[i] = view;
         }
 
-        Debug.Log("Loaded " + views.Length + " Illustrator objects.");
+        Debug.Log("Loaded " + views.Length + " objects.");
     }
 
     private void CreateGameObjects()
     {
-        if (views == null)
-        {
-            Debug.LogError("Nothing loaded.");
-            return;
-        }
+        if (views == null) return;
 
         Undo.IncrementCurrentGroup();
         int undoGroup = Undo.GetCurrentGroup();
@@ -244,41 +494,26 @@ public class IllustratorPlacementWindow : EditorWindow
         {
             if (!v.create) continue;
 
-            // Decide final name
-            string defaultName = GetDefaultName(v);
-            string finalName;
-
-            if (v.useCustomName && !string.IsNullOrEmpty(v.gameObjectName))
-                finalName = v.gameObjectName;
-            else
-                finalName = defaultName;
-
-            // Choose prefab: per-item override > global > null
             GameObject prefabToUse = v.prefab != null ? v.prefab : globalPrefab;
+            string finalName = prefabToUse ? prefabToUse.name :
+                               (!string.IsNullOrEmpty(v.data.name) ? v.data.name : "Object");
 
-            GameObject go;
-            if (prefabToUse != null)
-            {
-                go = (GameObject)PrefabUtility.InstantiatePrefab(prefabToUse);
-                go.name = finalName;
-            }
-            else
-            {
-                go = new GameObject(finalName);
-            }
+            GameObject go = prefabToUse
+                ? (GameObject)PrefabUtility.InstantiatePrefab(prefabToUse)
+                : new GameObject(finalName);
 
-            Undo.RegisterCreatedObjectUndo(go, "Create Illustrator Object");
+            go.name = finalName;
+            Undo.RegisterCreatedObjectUndo(go, "Create Object");
 
             float x = v.data.x * positionScale;
             float y = v.data.y * positionScale;
             if (flipY) y = -y;
 
-            Vector3 pos = new Vector3(x, y, 0f);
+            Vector3 pos = new Vector3(x, y, 0);
 
             if (parentTransform != null)
             {
                 go.transform.SetParent(parentTransform, false);
-
                 if (useLocalPosition)
                     go.transform.localPosition = pos;
                 else
@@ -289,48 +524,46 @@ public class IllustratorPlacementWindow : EditorWindow
                 go.transform.position = pos;
             }
 
-            go.transform.rotation = Quaternion.Euler(0f, 0f, -v.data.rotation);
+            go.transform.rotation = Quaternion.Euler(0, 0, -v.data.rotation);
+
+            // Apply sprite if any
+            if (v.sprite != null)
+            {
+                SpriteRenderer sr = go.GetComponentInChildren<SpriteRenderer>();
+                if (sr == null)
+                    sr = go.AddComponent<SpriteRenderer>();
+
+                sr.sprite = v.sprite;
+            }
 
             ApplyZOrder(go, v.data.zorder);
         }
 
         Undo.CollapseUndoOperations(undoGroup);
         EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
-
-        Debug.Log("GameObjects created successfully.");
-    }
-
-    // Default name logic: per-item prefab > global prefab > Illustrator name > fallback
-    private string GetDefaultName(IllustratorObjectView v)
-    {
-        if (v.prefab != null)
-            return v.prefab.name;
-
-        if (globalPrefab != null)
-            return globalPrefab.name;
-
-        if (!string.IsNullOrEmpty(v.data.name))
-            return v.data.name;
-
-        return "Object";
     }
 
     private void ApplyZOrder(GameObject go, int zorder)
     {
-        // If sprite → use sortingOrder
         var sr = go.GetComponentInChildren<SpriteRenderer>();
         if (sr != null)
         {
-            // Illustrator zorder: 0 = back, larger = front
-            // We want: front = 0, then -1, -2, -3 behind
             sr.sortingOrder = -zorder;
             return;
         }
 
-        // Otherwise use Z position
-        var pos = go.transform.position;
-        // Front = 0, then -0.01, -0.02, etc. behind
-        pos.z = -zorder * 0.01f;
-        go.transform.position = pos;
+        Vector3 p = go.transform.position;
+        p.z = -zorder * 0.01f;
+        go.transform.position = p;
+    }
+
+    #endregion
+
+    private string GetDefaultName(IllustratorObjectView v)
+    {
+        if (v.prefab != null) return v.prefab.name;
+        if (globalPrefab != null) return globalPrefab.name;
+        if (!string.IsNullOrEmpty(v.data.name)) return v.data.name;
+        return "Object";
     }
 }
