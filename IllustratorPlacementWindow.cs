@@ -1,6 +1,7 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Text;
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -11,18 +12,29 @@ using UnityEngine;
 public class IllustratorObjectData
 {
     public string name;
+    public string type;
+    public string sourceLayer;
+
     public float x;
     public float y;
     public float width;
     public float height;
     public float rotation;
-    public string thumbnail;
+
     public int zorder;
+
+    public string signature;
+    public string shapeSignature;
+    public string thumbnail;
 }
 
 [Serializable]
 public class IllustratorExportData
 {
+    public string sceneName;
+    public string documentName;
+    public string exportScope;
+    public string artboard;
     public string layer;
     public IllustratorObjectData[] objects;
 }
@@ -35,11 +47,10 @@ public class IllustratorObjectView
 
     public Texture2D thumbnail;
     public bool create = true;
+    public bool selected = false;
 
-    public bool selected = false;   // visual selection for the whole card
-
-    public GameObject prefab;       // Either prefab...
-    public Sprite sprite;           // ...or sprite (mutually exclusive)
+    public GameObject prefab;
+    public Sprite sprite;
 }
 
 #endregion
@@ -49,7 +60,8 @@ public class IllustratorPlacementWindow : EditorWindow
     private string jsonPath = "";
 
     private IllustratorExportData exportData;
-    private IllustratorObjectView[] views;
+    private IllustratorObjectView[] views;        // all real objects
+    private IllustratorObjectView[] displayViews; // one representative per family
 
     private Transform parentTransform;
     private GameObject globalPrefab;
@@ -90,11 +102,26 @@ public class IllustratorPlacementWindow : EditorWindow
     private void DrawGalleryPanel()
     {
         if (exportData != null)
-            EditorGUILayout.LabelField("Layer: " + exportData.layer, EditorStyles.miniBoldLabel);
+        {
+            if (!string.IsNullOrEmpty(exportData.sceneName))
+                EditorGUILayout.LabelField("Scene: " + exportData.sceneName, EditorStyles.miniBoldLabel);
+
+            if (!string.IsNullOrEmpty(exportData.documentName))
+                EditorGUILayout.LabelField("Document: " + exportData.documentName, EditorStyles.miniLabel);
+
+            if (!string.IsNullOrEmpty(exportData.artboard))
+                EditorGUILayout.LabelField("Artboard: " + exportData.artboard, EditorStyles.miniLabel);
+
+            if (!string.IsNullOrEmpty(exportData.layer))
+                EditorGUILayout.LabelField("Layer: " + exportData.layer, EditorStyles.miniLabel);
+
+            if (!string.IsNullOrEmpty(exportData.exportScope))
+                EditorGUILayout.LabelField("Scope: " + exportData.exportScope, EditorStyles.miniLabel);
+        }
 
         galleryScroll = EditorGUILayout.BeginScrollView(galleryScroll);
 
-        if (views == null || views.Length == 0)
+        if (displayViews == null || displayViews.Length == 0)
         {
             EditorGUILayout.HelpBox("Load a JSON file from the right panel.", MessageType.Info);
             EditorGUILayout.EndScrollView();
@@ -108,16 +135,16 @@ public class IllustratorPlacementWindow : EditorWindow
         float cardWidth = totalWidth / columns;
         if (cardWidth < 120f) cardWidth = 120f;
 
-        for (int i = 0; i < views.Length; i += columns)
+        for (int i = 0; i < displayViews.Length; i += columns)
         {
             EditorGUILayout.BeginHorizontal();
             for (int c = 0; c < columns; c++)
             {
                 int index = i + c;
-                if (index >= views.Length)
+                if (index >= displayViews.Length)
                     break;
 
-                DrawObjectCardCompact(views[index], cardWidth);
+                DrawObjectCardCompact(displayViews[index], cardWidth);
             }
             EditorGUILayout.EndHorizontal();
         }
@@ -125,30 +152,17 @@ public class IllustratorPlacementWindow : EditorWindow
         EditorGUILayout.EndScrollView();
     }
 
-    /// <summary>
-    /// Card that:
-    /// - Is selectable as a whole (like a folder/file).
-    /// - Shows thumbnail, names, prefab & sprite fields, and create toggle.
-    /// - Prefab & Sprite are mutually exclusive.
-    /// - Supports drag & drop: prefab/sprite dropped on a card is applied to
-    ///   all selected cards (or just that card if none selected).
-    /// </summary>
     private void DrawObjectCardCompact(IllustratorObjectView v, float cardWidth)
     {
-        // Tint the box if selected
         Color oldColor = GUI.color;
         if (v.selected)
-            GUI.color = new Color(0.24f, 0.24f, 0.24f);  // light gray
+            GUI.color = new Color(0.24f, 0.24f, 0.24f);
 
         GUILayout.BeginVertical("box", GUILayout.Width(cardWidth));
-
-        // Reset color so inner controls look normal
         GUI.color = oldColor;
 
-        // Create toggle
         v.create = GUILayout.Toggle(v.create, "Create", GUILayout.Height(16));
 
-        // Thumbnail
         GUILayout.BeginHorizontal();
         GUILayout.FlexibleSpace();
         GUILayout.Label(v.thumbnail != null ? v.thumbnail : Texture2D.grayTexture,
@@ -156,7 +170,6 @@ public class IllustratorPlacementWindow : EditorWindow
         GUILayout.FlexibleSpace();
         GUILayout.EndHorizontal();
 
-        // Prefab name (first line)
         string prefabName = v.prefab ? v.prefab.name : "No prefab";
         var prefabNameStyle = new GUIStyle(EditorStyles.boldLabel)
         {
@@ -166,7 +179,6 @@ public class IllustratorPlacementWindow : EditorWindow
         };
         GUILayout.Label(prefabName, prefabNameStyle);
 
-        // Illustrator name (second line)
         string illustratorLabel = string.IsNullOrEmpty(v.data.name) ? "Object" : v.data.name;
         var illustratorStyle = new GUIStyle(EditorStyles.miniLabel)
         {
@@ -175,7 +187,31 @@ public class IllustratorPlacementWindow : EditorWindow
         };
         GUILayout.Label(illustratorLabel, illustratorStyle);
 
-        // Prefab field (with label)
+        if (!string.IsNullOrEmpty(v.data.type))
+        {
+            GUILayout.Label(v.data.type, new GUIStyle(EditorStyles.miniLabel)
+            {
+                fontSize = 8,
+                alignment = TextAnchor.MiddleCenter
+            });
+        }
+
+        if (!string.IsNullOrEmpty(v.data.sourceLayer))
+        {
+            GUILayout.Label(v.data.sourceLayer, new GUIStyle(EditorStyles.miniLabel)
+            {
+                fontSize = 8,
+                alignment = TextAnchor.MiddleCenter
+            });
+        }
+
+        int familyCount = GetFamilyCount(v);
+        GUILayout.Label("Family: " + familyCount, new GUIStyle(EditorStyles.miniLabel)
+        {
+            fontSize = 8,
+            alignment = TextAnchor.MiddleCenter
+        });
+
         EditorGUILayout.LabelField("Prefab", EditorStyles.miniLabel);
         EditorGUI.BeginChangeCheck();
         GameObject newPrefab = (GameObject)EditorGUILayout.ObjectField(
@@ -186,15 +222,9 @@ public class IllustratorPlacementWindow : EditorWindow
             GUILayout.Height(14));
         if (EditorGUI.EndChangeCheck())
         {
-            v.prefab = newPrefab;
-            if (newPrefab != null)
-            {
-                // Prefab chosen → clear sprite (mutual exclusive)
-                v.sprite = null;
-            }
+            ApplyPrefabToFamily(v, newPrefab);
         }
 
-        // Sprite field (with label)
         EditorGUILayout.LabelField("Sprite", EditorStyles.miniLabel);
         EditorGUI.BeginChangeCheck();
         Sprite newSprite = (Sprite)EditorGUILayout.ObjectField(
@@ -205,32 +235,16 @@ public class IllustratorPlacementWindow : EditorWindow
             GUILayout.Height(14));
         if (EditorGUI.EndChangeCheck())
         {
-            v.sprite = newSprite;
-            if (newSprite != null)
-            {
-                // Sprite chosen → clear prefab (mutual exclusive)
-                v.prefab = null;
-            }
+            ApplySpriteToFamily(v, newSprite);
         }
 
         GUILayout.EndVertical();
 
-        // Get the rect Unity just used for this vertical card
         Rect cardRect = GUILayoutUtility.GetLastRect();
 
-        // ---- Change cursor when hovering ----
         if (cardRect.Contains(Event.current.mousePosition))
-        {
-            // Options:
-            // Link        = pointer hand
-            // ArrowPlus   = arrow with plus sign
-            // SlideArrow  = arrows left-right
-            // MoveArrow   = move icon
-            // You can customize later
             EditorGUIUtility.AddCursorRect(cardRect, MouseCursor.Link);
-        }
 
-        // Click on the whole card toggles selection
         Event e = Event.current;
         if (e.type == EventType.MouseDown && e.button == 0 && cardRect.Contains(e.mousePosition))
         {
@@ -239,7 +253,6 @@ public class IllustratorPlacementWindow : EditorWindow
             Repaint();
         }
 
-        // Drag & Drop of prefab / sprite on this card
         if (cardRect.Contains(e.mousePosition))
         {
             if (e.type == EventType.DragUpdated && ContainsPrefabOrSprite(DragAndDrop.objectReferences))
@@ -280,27 +293,19 @@ public class IllustratorPlacementWindow : EditorWindow
         }
 
         if (droppedPrefab != null)
-        {
             AssignPrefabToSelectedOrSingle(droppedPrefab, target);
-        }
         else if (droppedSprite != null)
-        {
             AssignSpriteToSelectedOrSingle(droppedSprite, target);
-        }
 
         Repaint();
     }
 
-    /// <summary>
-    /// If there are selected cards, assign prefab to all selected.
-    /// Otherwise assign only to this target card.
-    /// </summary>
     private void AssignPrefabToSelectedOrSingle(GameObject prefab, IllustratorObjectView target)
     {
-        if (prefab == null || views == null) return;
+        if (views == null) return;
 
         bool anySelected = false;
-        foreach (var v in views)
+        foreach (var v in displayViews)
         {
             if (v.selected)
             {
@@ -311,30 +316,45 @@ public class IllustratorPlacementWindow : EditorWindow
 
         if (anySelected)
         {
+            HashSet<string> selectedFamilyKeys = new HashSet<string>();
+            List<IllustratorObjectView> selectedSingles = new List<IllustratorObjectView>();
+
+            foreach (var dv in displayViews)
+            {
+                if (!dv.selected) continue;
+
+                string key = GetFamilyKey(dv.data);
+                if (!string.IsNullOrEmpty(key))
+                    selectedFamilyKeys.Add(key);
+                else
+                    selectedSingles.Add(dv);
+            }
+
             foreach (var v in views)
             {
-                if (!v.selected) continue;
-                v.prefab = prefab;
-                v.sprite = null;
+                string key = GetFamilyKey(v.data);
+
+                if ((!string.IsNullOrEmpty(key) && selectedFamilyKeys.Contains(key)) ||
+                    (string.IsNullOrEmpty(key) && selectedSingles.Contains(v)))
+                {
+                    v.prefab = prefab;
+                    if (prefab != null)
+                        v.sprite = null;
+                }
             }
         }
         else
         {
-            target.prefab = prefab;
-            target.sprite = null;
+            ApplyPrefabToFamily(target, prefab);
         }
     }
 
-    /// <summary>
-    /// If there are selected cards, assign sprite to all selected.
-    /// Otherwise assign only to this target card.
-    /// </summary>
     private void AssignSpriteToSelectedOrSingle(Sprite sprite, IllustratorObjectView target)
     {
-        if (sprite == null || views == null) return;
+        if (views == null) return;
 
         bool anySelected = false;
-        foreach (var v in views)
+        foreach (var v in displayViews)
         {
             if (v.selected)
             {
@@ -345,18 +365,157 @@ public class IllustratorPlacementWindow : EditorWindow
 
         if (anySelected)
         {
+            HashSet<string> selectedFamilyKeys = new HashSet<string>();
+            List<IllustratorObjectView> selectedSingles = new List<IllustratorObjectView>();
+
+            foreach (var dv in displayViews)
+            {
+                if (!dv.selected) continue;
+
+                string key = GetFamilyKey(dv.data);
+                if (!string.IsNullOrEmpty(key))
+                    selectedFamilyKeys.Add(key);
+                else
+                    selectedSingles.Add(dv);
+            }
+
             foreach (var v in views)
             {
-                if (!v.selected) continue;
-                v.sprite = sprite;
-                v.prefab = null;
+                string key = GetFamilyKey(v.data);
+
+                if ((!string.IsNullOrEmpty(key) && selectedFamilyKeys.Contains(key)) ||
+                    (string.IsNullOrEmpty(key) && selectedSingles.Contains(v)))
+                {
+                    v.sprite = sprite;
+                    if (sprite != null)
+                        v.prefab = null;
+                }
             }
         }
         else
         {
-            target.sprite = sprite;
-            target.prefab = null;
+            ApplySpriteToFamily(target, sprite);
         }
+    }
+
+    private void ApplyPrefabToFamily(IllustratorObjectView target, GameObject prefab)
+    {
+        if (views == null || target == null) return;
+
+        string familyKey = GetFamilyKey(target.data);
+        bool appliedToFamily = false;
+
+        if (!string.IsNullOrEmpty(familyKey))
+        {
+            foreach (var v in views)
+            {
+                if (GetFamilyKey(v.data) != familyKey) continue;
+                v.prefab = prefab;
+                if (prefab != null)
+                    v.sprite = null;
+                appliedToFamily = true;
+            }
+        }
+
+        if (!appliedToFamily)
+        {
+            target.prefab = prefab;
+            if (prefab != null)
+                target.sprite = null;
+        }
+    }
+
+    private void ApplySpriteToFamily(IllustratorObjectView target, Sprite sprite)
+    {
+        if (views == null || target == null) return;
+
+        string familyKey = GetFamilyKey(target.data);
+        bool appliedToFamily = false;
+
+        if (!string.IsNullOrEmpty(familyKey))
+        {
+            foreach (var v in views)
+            {
+                if (GetFamilyKey(v.data) != familyKey) continue;
+                v.sprite = sprite;
+                if (sprite != null)
+                    v.prefab = null;
+                appliedToFamily = true;
+            }
+        }
+
+        if (!appliedToFamily)
+        {
+            target.sprite = sprite;
+            if (sprite != null)
+                target.prefab = null;
+        }
+    }
+
+    private string GetFamilyKey(IllustratorObjectData data)
+    {
+        if (data == null) return string.Empty;
+
+        if (!string.IsNullOrEmpty(data.shapeSignature))
+            return "shape:" + data.shapeSignature;
+
+        if (!string.IsNullOrEmpty(data.signature))
+            return "sig:" + data.signature;
+
+        return string.Empty;
+    }
+
+    private int GetFamilyCount(IllustratorObjectView target)
+    {
+        if (views == null || target == null) return 1;
+
+        string familyKey = GetFamilyKey(target.data);
+        if (string.IsNullOrEmpty(familyKey))
+            return 1;
+
+        int count = 0;
+        foreach (var v in views)
+        {
+            if (GetFamilyKey(v.data) == familyKey)
+                count++;
+        }
+
+        return Mathf.Max(1, count);
+    }
+
+    private void BuildDisplayViews()
+    {
+        if (views == null || views.Length == 0)
+        {
+            displayViews = null;
+            return;
+        }
+
+        var familyMap = new Dictionary<string, IllustratorObjectView>();
+        var singles = new List<IllustratorObjectView>();
+
+        foreach (var v in views)
+        {
+            string familyKey = GetFamilyKey(v.data);
+
+            if (string.IsNullOrEmpty(familyKey))
+            {
+                singles.Add(v);
+                continue;
+            }
+
+            if (!familyMap.ContainsKey(familyKey))
+                familyMap.Add(familyKey, v);
+        }
+
+        var result = new List<IllustratorObjectView>();
+
+        foreach (var kv in familyMap)
+            result.Add(kv.Value);
+
+        result.AddRange(singles);
+
+        displayViews = result.ToArray();
     }
 
     #endregion
@@ -368,7 +527,6 @@ public class IllustratorPlacementWindow : EditorWindow
         EditorGUILayout.LabelField("Import Illustrator Layout", EditorStyles.boldLabel);
         EditorGUILayout.Space(4);
 
-        // JSON path – label then field
         EditorGUILayout.LabelField("JSON Path", EditorStyles.miniLabel);
         jsonPath = EditorGUILayout.TextField(jsonPath);
         if (GUILayout.Button("Browse...", GUILayout.Height(20)))
@@ -380,21 +538,17 @@ public class IllustratorPlacementWindow : EditorWindow
 
         EditorGUILayout.Space(6);
 
-        // Parent Transform
         EditorGUILayout.LabelField("Parent Transform", EditorStyles.miniLabel);
         parentTransform = (Transform)EditorGUILayout.ObjectField(parentTransform, typeof(Transform), true);
 
-        // Global Prefab
         EditorGUILayout.LabelField("Global Prefab", EditorStyles.miniLabel);
         globalPrefab = (GameObject)EditorGUILayout.ObjectField(globalPrefab, typeof(GameObject), false);
 
-        // Position Scale
         EditorGUILayout.LabelField("Position Scale", EditorStyles.miniLabel);
         positionScale = EditorGUILayout.FloatField(positionScale);
 
         EditorGUILayout.Space(4);
 
-        // Checkboxes
         flipY = EditorGUILayout.ToggleLeft("Flip Y", flipY);
         useLocalPosition = EditorGUILayout.ToggleLeft("Use Local Position", useLocalPosition);
 
@@ -409,7 +563,8 @@ public class IllustratorPlacementWindow : EditorWindow
         EditorGUILayout.Space(10);
         EditorGUILayout.LabelField("Summary", EditorStyles.boldLabel);
 
-        int total = views?.Length ?? 0;
+        int totalObjects = views?.Length ?? 0;
+        int visibleFamilies = displayViews?.Length ?? 0;
         int toCreate = 0;
 
         if (views != null)
@@ -420,15 +575,16 @@ public class IllustratorPlacementWindow : EditorWindow
             }
         }
 
-        EditorGUILayout.LabelField("Total: " + total);
+        EditorGUILayout.LabelField("Total Objects: " + totalObjects);
+        EditorGUILayout.LabelField("Visible Families: " + visibleFamilies);
         EditorGUILayout.LabelField("To Create: " + toCreate);
 
         EditorGUILayout.Space(4);
         EditorGUILayout.HelpBox(
-            "Click a card to select/deselect it (like folders).\n" +
-            "Drag a Prefab or Sprite from the Project window onto any card.\n" +
-            "If some cards are selected, the dropped asset is assigned to ALL selected.\n" +
-            "If none are selected, it only applies to the card you dropped on.",
+            "Gallery shows one card per family.\n" +
+            "Family priority: shapeSignature → signature → single object.\n" +
+            "Assigning a Sprite or Prefab to a card applies it to all real objects in that family.\n" +
+            "Scene creation still instantiates all original objects.",
             MessageType.None);
 
         using (new EditorGUI.DisabledScope(views == null))
@@ -460,19 +616,23 @@ public class IllustratorPlacementWindow : EditorWindow
         }
 
         string baseDir = Path.GetDirectoryName(jsonPath);
-
         views = new IllustratorObjectView[exportData.objects.Length];
 
         for (int i = 0; i < exportData.objects.Length; i++)
         {
             var d = exportData.objects[i];
-            var view = new IllustratorObjectView { data = d, create = true, selected = false };
+            var view = new IllustratorObjectView
+            {
+                data = d,
+                create = true,
+                selected = false
+            };
 
             string thumb = Path.Combine(baseDir, d.thumbnail);
             if (File.Exists(thumb))
             {
                 byte[] bytes = File.ReadAllBytes(thumb);
-                Texture2D tex = new Texture2D(2, 2);
+                Texture2D tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
                 tex.LoadImage(bytes);
                 view.thumbnail = tex;
             }
@@ -480,7 +640,9 @@ public class IllustratorPlacementWindow : EditorWindow
             views[i] = view;
         }
 
-        Debug.Log("Loaded " + views.Length + " objects.");
+        BuildDisplayViews();
+
+        Debug.Log("Loaded " + views.Length + " objects. Displaying " + (displayViews != null ? displayViews.Length : 0) + " families.");
     }
 
     private void CreateGameObjects()
@@ -495,25 +657,25 @@ public class IllustratorPlacementWindow : EditorWindow
             if (!v.create) continue;
 
             GameObject prefabToUse = v.prefab != null ? v.prefab : globalPrefab;
-            string finalName = prefabToUse ? prefabToUse.name :
-                               (!string.IsNullOrEmpty(v.data.name) ? v.data.name : "Object");
+            string finalName = GetDefaultName(v);
 
-            GameObject go = prefabToUse
+            GameObject go = prefabToUse != null
                 ? (GameObject)PrefabUtility.InstantiatePrefab(prefabToUse)
                 : new GameObject(finalName);
 
             go.name = finalName;
-            Undo.RegisterCreatedObjectUndo(go, "Create Object");
+            Undo.RegisterCreatedObjectUndo(go, "Create Illustrator Object");
 
             float x = v.data.x * positionScale;
             float y = v.data.y * positionScale;
             if (flipY) y = -y;
 
-            Vector3 pos = new Vector3(x, y, 0);
+            Vector3 pos = new Vector3(x, y, 0f);
 
             if (parentTransform != null)
             {
                 go.transform.SetParent(parentTransform, false);
+
                 if (useLocalPosition)
                     go.transform.localPosition = pos;
                 else
@@ -524,9 +686,8 @@ public class IllustratorPlacementWindow : EditorWindow
                 go.transform.position = pos;
             }
 
-            go.transform.rotation = Quaternion.Euler(0, 0, -v.data.rotation);
+            go.transform.rotation = Quaternion.Euler(0f, 0f, -v.data.rotation);
 
-            // Apply sprite if any
             if (v.sprite != null)
             {
                 SpriteRenderer sr = go.GetComponentInChildren<SpriteRenderer>();
@@ -536,11 +697,33 @@ public class IllustratorPlacementWindow : EditorWindow
                 sr.sprite = v.sprite;
             }
 
+            ApplyIllustratorScale(go, v.data);
             ApplyZOrder(go, v.data.zorder);
         }
 
         Undo.CollapseUndoOperations(undoGroup);
         EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
+    }
+
+    private void ApplyIllustratorScale(GameObject go, IllustratorObjectData data)
+    {
+        SpriteRenderer sr = go.GetComponentInChildren<SpriteRenderer>();
+        if (sr == null || sr.sprite == null)
+            return;
+
+        float spriteWorldWidth = sr.sprite.rect.width / sr.sprite.pixelsPerUnit;
+        float spriteWorldHeight = sr.sprite.rect.height / sr.sprite.pixelsPerUnit;
+
+        if (spriteWorldWidth <= 0f || spriteWorldHeight <= 0f)
+            return;
+
+        float targetWorldWidth = data.width * positionScale;
+        float targetWorldHeight = data.height * positionScale;
+
+        float scaleX = targetWorldWidth / spriteWorldWidth;
+        float scaleY = targetWorldHeight / spriteWorldHeight;
+
+        go.transform.localScale = new Vector3(scaleX, scaleY, 1f);
     }
 
     private void ApplyZOrder(GameObject go, int zorder)
